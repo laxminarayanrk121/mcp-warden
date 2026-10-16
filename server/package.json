@@ -1,0 +1,17 @@
+{
+  "name": "mcp-warden-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP Warden — Express backend and security engine",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test 'src/tests/**/*.test.js'"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {}
+}

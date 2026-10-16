@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.example
+
+# Build output
+dist/
+build/
+*.log
+
+# Coverage
+coverage/
+.nyc_output/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Baseline storage (runtime-generated, not source of truth)
+data/baselines/*.json
