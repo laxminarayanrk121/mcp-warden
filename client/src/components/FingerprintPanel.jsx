@@ -1,0 +1,5 @@
+import { Fingerprint, CheckCircle2, GitBranch } from "lucide-react";
+export default function FingerprintPanel({ result, comparison }) {
+  const drift = comparison?.drift;
+  return <section className="panel"><div className="panel-heading"><div><div className="eyebrow">TOOL TRUST LEDGER</div><h2>Metadata fingerprint</h2></div><Fingerprint size={19}/></div><div className="hash-block"><div className="hash-label"><span>CURRENT · SHA-256</span>{result && <CheckCircle2 size={14}/>}</div><code>{result?.fingerprint || "Run a scan to calculate the digest."}</code></div><div className="hash-block"><div className="hash-label"><span>APPROVED BASELINE</span><GitBranch size={14}/></div><code>{drift?.baselineFingerprint || "No comparison performed."}</code></div>{drift && <div className={`drift-status ${drift.status}`}><span className="status-dot"/>{drift.status === "match" ? "Metadata matches baseline" : drift.status === "drift" ? "Metadata drift detected" : "Baseline unavailable"}</div>}</section>;
+}
