@@ -1,0 +1,16 @@
+{
+  "id": "048611a37f92",
+  "fingerprint": "sha256:f11ff553b906dcb0569091977acf3def5520f3c0c999fcf380a8b1aa945f82d1",
+  "createdAt": "2026-10-16T09:07:59.524Z",
+  "source": "manual",
+  "name": "manual-baseline",
+  "toolCount": 1,
+  "manifest": {
+    "tools": [
+      {
+        "name": "lookup",
+        "description": "Look up a public record."
+      }
+    ]
+  }
+}

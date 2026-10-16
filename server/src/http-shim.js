@@ -2,7 +2,7 @@
 //
 // Purpose: keep the backend runnable and testable in this environment where
 // the npm registry is unreachable. The public surface mirrors Express:
-//   - createApp() returns an object with .use(), .get(), .post(), .listen()
+//   - createApp() returns an object with .use(), .get(), .post(), .delete(), .listen()
 //   - res.status(code), res.json(obj), res.writeHead(), res.end()
 //   - middleware chaining via next(err)
 //   - router mounting: app.use("/api/health", router)
@@ -58,7 +58,7 @@ function makeResObject(res) {
 }
 
 function isRouter(obj) {
-  return obj && typeof obj === "object" && (typeof obj.get === "function" || typeof obj.use === "function");
+  return obj && typeof obj === "object" && (typeof obj.get === "function" || typeof obj.use === "function" || typeof obj.delete === "function" || typeof obj.post === "function");
 }
 
 export function createRouter() {
@@ -75,6 +75,10 @@ export function createRouter() {
     },
     post(path, handler) {
       routes.push({ type: "route", method: "POST", path, handler });
+      return this;
+    },
+    delete(path, handler) {
+      routes.push({ type: "route", method: "DELETE", path, handler });
       return this;
     },
     _routes: routes,
@@ -108,6 +112,10 @@ export function createApp() {
     },
     post(path, handler) {
       routes.push({ type: "route", method: "POST", path, handler });
+      return app;
+    },
+    delete(path, handler) {
+      routes.push({ type: "route", method: "DELETE", path, handler });
       return app;
     },
     listen(port, cb) {

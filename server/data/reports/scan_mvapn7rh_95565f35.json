@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "scanId": "scan_mvapn7rh_95565f35",
+  "score": 0,
+  "riskLevel": "Low",
+  "fingerprint": "sha256:5be6fd8118beab4e78cedf27395f7d9c95679c5fc9b7c97945b04f6339b6c5fa",
+  "baselineStatus": "unavailable",
+  "toolsScanned": 1,
+  "summary": {
+    "toolsInspected": 1,
+    "findingsCount": 0,
+    "filesScanned": 0
+  },
+  "scoreBreakdown": {
+    "descriptions": 0,
+    "sourcePatterns": 0,
+    "metadataDrift": 0,
+    "toolSetMismatch": 0
+  },
+  "findings": [],
+  "includeSourceScan": false,
+  "createdAt": "2026-10-16T08:33:17.837Z"
+}

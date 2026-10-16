@@ -1,4 +1,5 @@
 import app from "./app.js";
+import { pathToFileURL } from "node:url";
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -19,7 +20,7 @@ function startServer() {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startServer().catch((err) => {
     console.error("Fatal: could not start server.", err);
     process.exit(1);
