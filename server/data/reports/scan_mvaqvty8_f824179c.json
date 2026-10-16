@@ -1,0 +1,71 @@
+{
+  "success": true,
+  "scanId": "scan_mvaqvty8_f824179c",
+  "timestamp": "2026-10-16T09:07:59.456Z",
+  "score": 0,
+  "riskLevel": "Low",
+  "fingerprint": "sha256:6681d0d690ffdee4b100e11fce3737e116daf16004de4f3d36d5d3a8ae69776c",
+  "baselineStatus": "unavailable",
+  "toolsScanned": 1,
+  "summary": {
+    "toolsInspected": 1,
+    "findingsCount": 0,
+    "filesScanned": 0
+  },
+  "severityCounts": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  },
+  "scoreBreakdown": {
+    "descriptions": 0,
+    "sourcePatterns": 0,
+    "metadataDrift": 0,
+    "toolSetMismatch": 0
+  },
+  "findings": [],
+  "capabilityAnalysis": {
+    "analysisType": "static",
+    "runtimeAnalysisPerformed": false,
+    "capabilities": {
+      "filesystem": {
+        "declared": [],
+        "staticallyObserved": [],
+        "dynamicallyObserved": [],
+        "unknown": true
+      },
+      "processExecution": {
+        "declared": [],
+        "staticallyObserved": [],
+        "dynamicallyObserved": [],
+        "unknown": true
+      },
+      "network": {
+        "declared": [],
+        "staticallyObserved": [],
+        "dynamicallyObserved": [],
+        "unknown": true
+      },
+      "environmentVariables": {
+        "declared": [],
+        "staticallyObserved": [],
+        "dynamicallyObserved": [],
+        "unknown": true
+      },
+      "dynamicCode": {
+        "declared": [],
+        "staticallyObserved": [],
+        "dynamicallyObserved": [],
+        "unknown": true
+      }
+    },
+    "limitations": [
+      "Declared capabilities are inferred from untrusted tool metadata and are not proof of runtime behavior.",
+      "No source code or MCP server was executed; dynamic behavior remains unknown."
+    ]
+  },
+  "recommendations": [],
+  "includeSourceScan": false,
+  "createdAt": "2026-10-16T09:07:59.456Z"
+}

@@ -32,58 +32,56 @@ Health check. Returns the current API status and version.
 
 ---
 
-## Planned (not yet implemented)
-
-These endpoints are documented for System 2 integration. They are **not implemented** in the current milestone. Do not call them yet.
+## Available Routes
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/fixtures` | List available demo fixture scenarios |
-| `POST` | `/api/scan` | Run a security scan over a fixture / manifest |
-| `POST` | `/api/baselines` | Save a SHA-256 metadata baseline |
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/fixtures` | List built-in fixtures |
+| `GET` | `/api/fixtures/:id` | Fetch a fixture manifest |
+| `POST` | `/api/scan` | Scan a fixture or tool manifest; optionally include source files and a baseline |
+| `POST` | `/api/baselines` | Create a metadata baseline |
 | `GET` | `/api/baselines` | List saved baselines |
-| `POST` | `/api/compare` | Compare current manifest against a baseline |
-| `GET` | `/api/reports/:id` | Fetch a stored scan report |
+| `DELETE` | `/api/baselines/:id` | Delete a baseline |
+| `POST` | `/api/compare` | Compare a fixture or manifest against a baseline |
+| `GET` | `/api/reports` | List saved scan reports |
+| `GET` | `/api/reports/:id` | Fetch a saved report as JSON |
+| `GET` | `/api/reports/:id/md` | Fetch a saved report as Markdown |
 
-### Planned scan response schema
+### `POST /api/scan`
+
+Provide exactly one of `fixtureId`, `manifest`, or the legacy top-level `tools` array. Source scanning is opt-in and accepts in-memory text only; source code is never executed.
 
 ```json
 {
-  "scanId": "scan_0001",
-  "score": 78,
-  "riskLevel": "high",
-  "fingerprint": "sha256:9f2c...",
-  "findings": [
-    {
-      "ruleId": "DESC-INSTR-OVERRIDE",
-      "severity": "high",
-      "title": "Tool description contains instruction-override language",
-      "evidence": "Ignore all previous instructions...",
-      "remediation": "Remove the instruction-override phrasing from the tool description."
-    }
-  ]
+  "fixtureId": "benign",
+  "includeSourceScan": true,
+  "sourceFiles": [
+    { "path": "src/example.js", "content": "eval(input);" }
+  ],
+  "baselineId": "6d6c9b543e30"
 }
 ```
 
-Field definitions:
+Successful responses include a `scanId`, timestamp, score and risk level, SHA-256 metadata fingerprint, findings, severity counts, capability analysis, baseline changes when compared, recommendations, and limitations. `capabilityAnalysis.runtimeAnalysisPerformed` is `false`; static results do not verify runtime behavior.
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `scanId` | string | Unique identifier for the scan |
-| `score` | integer | Heuristic risk score, `0`–`100` |
-| `riskLevel` | string | `low` | `medium` | `high` | `critical` |
-| `fingerprint` | string | `sha256:` prefix + hex digest of normalized tool metadata |
-| `findings` | array | See finding object below |
+### `POST /api/baselines`
 
-### Planned finding object
+Create a baseline from a fixture or manifest:
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `ruleId` | string | Stable identifier for the rule that fired |
-| `severity` | string | `low` \| `medium` \| `high` \| `critical` |
-| `title` | string | Human-readable description |
-| `evidence` | string | The matched text or metadata that triggered the finding |
-| `remediation` | string | Suggested action |
+```json
+{ "fixtureId": "benign", "name": "approved-tools" }
+```
+
+### `POST /api/compare`
+
+Compare a baseline with exactly one fixture or manifest:
+
+```json
+{ "baselineId": "6d6c9b543e30", "fixtureId": "suspicious" }
+```
+
+A detected metadata change is drift for review, not proof of malicious behavior.
 
 ---
 
@@ -134,4 +132,4 @@ Default URL: `http://localhost:4000`
 - The backend runs on **port 4000** by default. Override with the `PORT` env var.
 - The Vite dev server should set `CORS_ORIGINS` to its own origin (e.g. `http://localhost:5173`).
 - Use a relative `/api/...` path in the Vite proxy config, or set `VITE_API_BASE=http://localhost:4000` in the frontend environment.
-- Only the health endpoint is live right now. The other `/api/*` routes above are planned.
+- The routes listed above are implemented by the current backend.

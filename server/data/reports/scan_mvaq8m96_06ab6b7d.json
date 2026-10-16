@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "scanId": "scan_mvaq8m96_06ab6b7d",
+  "score": 15,
+  "riskLevel": "Low",
+  "fingerprint": "sha256:93d23dd3646df7c65039cbc8497beb14775ee345bef9ea9df11178c028ccd9ee",
+  "baselineStatus": "unavailable",
+  "fixtureId": "benign",
+  "toolsScanned": 2,
+  "summary": {
+    "toolsInspected": 2,
+    "findingsCount": 1,
+    "filesScanned": 2
+  },
+  "scoreBreakdown": {
+    "descriptions": 0,
+    "sourcePatterns": 15,
+    "metadataDrift": 0,
+    "toolSetMismatch": 0
+  },
+  "findings": [
+    {
+      "ruleId": "SRC001",
+      "category": "source",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Dynamic code execution",
+      "file": "src/bad.js",
+      "line": 1,
+      "evidence": "eval(userInput);",
+      "explanation": "Dynamic code evaluation can execute untrusted input as code.",
+      "remediation": "Avoid eval() and new Function() with untrusted input."
+    }
+  ],
+  "includeSourceScan": true,
+  "createdAt": "2026-10-16T08:49:56.394Z"
+}

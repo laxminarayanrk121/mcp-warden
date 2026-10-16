@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "scanId": "scan_mvap14g0_c09d8f4e",
+  "score": 0,
+  "riskLevel": "Low",
+  "fingerprint": "sha256:6681d0d690ffdee4b100e11fce3737e116daf16004de4f3d36d5d3a8ae69776c",
+  "baselineStatus": "unavailable",
+  "toolsScanned": 1,
+  "summary": {
+    "toolsInspected": 1,
+    "findingsCount": 0,
+    "filesScanned": 0
+  },
+  "scoreBreakdown": {
+    "descriptions": 0,
+    "sourcePatterns": 0,
+    "metadataDrift": 0,
+    "toolSetMismatch": 0
+  },
+  "findings": [],
+  "includeSourceScan": false,
+  "createdAt": "2026-10-16T08:16:07.104Z"
+}

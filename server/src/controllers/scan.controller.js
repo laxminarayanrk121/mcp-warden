@@ -1,72 +1,59 @@
-// MCP Warden — scan controller.
+// MCP Warden — scan controller (Security Feature F).
 //
-// Orchestrates a description-security scan over submitted MCP tool metadata.
+// Orchestrates the complete security audit workflow:
+//   1. Validate input (fixtureId or raw manifest, includeSourceScan flag, baselineId)
+//   2. Load permitted fixture or validate supplied manifest
+//   3. Run description analysis
+//   4. Run source scanning when source input is explicitly supplied and allowed
+//   5. Generate canonical fingerprint
+//   6. Compare against a baseline when a valid baselineId is supplied
+//   7. Calculate the final risk score
+//   8. Return a consistent structured result
+//   9. Store enough sanitized report data for later retrieval
 //
-// SAFETY: this controller is read-only over tool metadata. It inspects only
-// `name` and `description` strings. It never executes, spawns, imports, or
-// evals submitted tools, scripts, or MCP servers — the request body is treated
-// as untrusted data and passed only to the pure regex-based scanner.
+// SAFETY: this controller never executes untrusted code, never touches the host
+// filesystem with client-supplied paths, and never includes secrets in logs or
+// responses.
 
-import { createHash } from "node:crypto";
-import { scanDescriptions } from "../security/descriptionRules.js";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
+import { validateFixtureId } from "../utils/validation.js";
+import { analyzeDescriptions } from "../services/description-analyzer.js";
+import { analyzeCapabilities } from "../services/capability-analyzer.js";
+import { scanSourceFiles, validateFiles } from "../services/source-scanner.js";
+import {
+  computeFingerprint,
+  validateManifest,
+} from "../services/fingerprint.service.js";
+import { loadBaseline } from "../services/baseline.service.js";
+import { detectDrift } from "../services/drift-detector.js";
+import { calculateRiskScore } from "../services/risk-scorer.js";
+import { saveReport } from "../services/report.service.js";
+
+// FIXTURE_DIR should point to the repository root fixtures directory.
+// When the server is started from the repo root, process.cwd() is the repo root.
+const FIXTURE_DIR = join(process.cwd(), "..", "fixtures");
 const MAX_TOOLS = 200;
 const MAX_DESCRIPTION_LENGTH = 4096;
-
-const SEVERITY_WEIGHT = { low: 5, medium: 15, high: 40, critical: 60 };
-
-function riskLevel(score) {
-  if (score >= 70) return "critical";
-  if (score >= 45) return "high";
-  if (score >= 20) return "medium";
-  return "low";
-}
-
-function computeScore(findings) {
-  let score = 0;
-  for (const f of findings) {
-    score += SEVERITY_WEIGHT[f.severity] ?? 10;
-  }
-  return Math.min(100, score);
-}
-
-/**
- * Build a deterministic fingerprint over normalized tool metadata.
- * Only `name` and `description` contribute — never command/args/scripts.
- */
-function fingerprint(tools) {
-  const parts = [];
-  for (const tool of tools) {
-    const name = typeof tool.name === "string" ? tool.name.trim().toLowerCase() : "";
-    const description =
-      typeof tool.description === "string"
-        ? tool.description.trim().toLowerCase().replace(/\s+/g, " ")
-        : "";
-    parts.push(`${name}\u0000${description}`);
-  }
-  const digest = createHash("sha256").update(parts.join("\u0001")).digest("hex");
-  return `sha256:${digest}`;
-}
+const MAX_SOURCE_FILES = 50;
+const MAX_SOURCE_CHARS = 100_000;
 
 /**
  * Validate the request body for POST /api/scan.
+ * Supports three modes for backward compatibility:
+ *   1. fixture-based: { fixtureId: "benign|suspicious|rug-pull", includeSourceScan?: boolean, baselineId?: string }
+ *   2. manifest-based: { manifest: object, includeSourceScan?: boolean, sourceFiles?: Array, baselineId?: string }
+ *   3. legacy-manifest: { tools: Array, includeSourceScan?: boolean, ... } (treated as manifest)
  *
- * The HTTP shim stores the raw request body as a string on `req.body`, so the
- * JSON is parsed here. Malformed JSON is rejected as a 400 rather than
- * crashing the server.
- *
- * @returns {{ ok: true, tools: object[] }} | { ok: false, code: string, message: string, status: number }
+ * The body may be a string (raw JSON) or an already-parsed object.
+ * @param {object|string} body
+ * @returns {{ ok: true, mode: "fixture"|"manifest", fixtureId?: string, manifest?: object, includeSourceScan: boolean, sourceFiles?: Array, baselineId?: string }}
+ *          | { ok: false, code: string, message: string, status: number }
  */
 function validateScanRequest(body) {
-  if (body === undefined || body === null || body === "") {
-    return {
-      ok: false,
-      status: 400,
-      code: "INVALID_REQUEST",
-      message: "Request body must be a JSON object with a `tools` array.",
-    };
-  }
-
+  // If body is a string, try to parse it as JSON.
   let parsed;
   if (typeof body === "string") {
     try {
@@ -79,83 +66,256 @@ function validateScanRequest(body) {
         message: "Request body is not valid JSON.",
       };
     }
+  } else if (body === undefined || body === null || typeof body !== "object") {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_REQUEST",
+      message: "Request body must be a JSON object.",
+    };
   } else {
     parsed = body;
   }
 
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+  const { fixtureId, manifest, includeSourceScan = false, sourceFiles, baselineId, tools } = parsed;
+
+  // Determine which mode we're in.
+  let mode = null;
+  let manifestObject = null;
+
+  if (fixtureId && typeof fixtureId === "string" && fixtureId.trim()) {
+    // Mode 1: fixture-based
+    mode = "fixture";
+  } else if (manifest && typeof manifest === "object" && !Array.isArray(manifest)) {
+    // Mode 2: manifest-based (wrapped)
+    mode = "manifest";
+    manifestObject = manifest;
+  } else if (tools && Array.isArray(tools)) {
+    // Mode 3: legacy-manifest (backward compatibility with existing tests)
+    mode = "manifest";
+    manifestObject = parsed; // treat the whole object as the manifest
+  } else {
     return {
       ok: false,
       status: 400,
       code: "INVALID_REQUEST",
-      message: "Request body must be a JSON object with a `tools` array.",
+      message: "Provide exactly one of fixtureId, manifest, or tools array.",
     };
   }
 
-  const { tools } = parsed;
-  if (!Array.isArray(tools)) {
+  // Validate baselineId if present (format only; existence checked later).
+  if (baselineId !== undefined) {
+    if (typeof baselineId !== "string" || !baselineId.trim()) {
+      return {
+        ok: false,
+        status: 400,
+        code: "INVALID_REQUEST",
+        message: "baselineId must be a non-empty string.",
+      };
+    }
+    // Basic UUID-like sanity check; service will confirm existence.
+    if (!/^[a-f0-9]{12}$/i.test(baselineId)) {
+      return {
+        ok: false,
+        status: 400,
+        code: "INVALID_REQUEST",
+        message: "baselineId format is invalid.",
+      };
+    }
+  }
+
+  let validatedSourceFiles;
+  if (includeSourceScan) {
+    if (!Array.isArray(sourceFiles)) {
+      return {
+        ok: false,
+        status: 400,
+        code: "INVALID_REQUEST",
+        message: "includeSourceScan is true but sourceFiles is not an array.",
+      };
+    }
+    try {
+      validateFiles(sourceFiles);
+      validatedSourceFiles = sourceFiles;
+    } catch (err) {
+      return {
+        ok: false,
+        status: err instanceof RangeError ? 413 : 400,
+        code: err instanceof RangeError ? "PAYLOAD_TOO_LARGE" : "INVALID_REQUEST",
+        message: `sourceFiles validation failed: ${err.message}`,
+      };
+    }
+  }
+
+  if (mode === "fixture") {
+    try {
+      const fid = validateFixtureId(fixtureId);
+      return {
+        ok: true,
+        mode: "fixture",
+        fixtureId: fid,
+        includeSourceScan: Boolean(includeSourceScan),
+        sourceFiles: validatedSourceFiles,
+        baselineId: baselineId || undefined,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        status: err.status || 400,
+        code: err.code || "INVALID_REQUEST",
+        message: err.message,
+      };
+    }
+  }
+
+  // manifest-based mode (including legacy)
+  // 1. Validate manifest shape.
+  const manifestValidation = validateManifest(manifestObject);
+  if (!manifestValidation.ok) {
     return {
       ok: false,
       status: 400,
       code: "INVALID_REQUEST",
-      message: "`tools` must be an array of MCP tool objects.",
+      message: `Invalid manifest: ${manifestValidation.error}`,
     };
   }
 
-  if (tools.length === 0) {
-    return { ok: true, tools: [] };
+  // 1b. Validate description length for legacy mode (tools array directly)
+  if (tools && Array.isArray(tools)) {
+    for (let i = 0; i < tools.length; i++) {
+      const tool = tools[i];
+      if (tool && typeof tool.description === "string" && tool.description.length > MAX_DESCRIPTION_LENGTH) {
+        return {
+          ok: false,
+          status: 413,
+          code: "PAYLOAD_TOO_LARGE",
+          message: `Tool at index ${i} description exceeds ${MAX_DESCRIPTION_LENGTH} characters.`,
+        };
+      }
+    }
   }
 
-  if (tools.length > MAX_TOOLS) {
-    return {
-      ok: false,
-      status: 413,
-      code: "PAYLOAD_TOO_LARGE",
-      message: `Request exceeds the limit of ${MAX_TOOLS} tools.`,
-    };
-  }
-
-  const normalized = [];
-  for (let i = 0; i < tools.length; i++) {
-    const tool = tools[i];
-    if (tool === null || typeof tool !== "object" || Array.isArray(tool)) {
-      return {
-        ok: false,
-        status: 400,
-        code: "INVALID_TOOL",
-        message: `Tool at index ${i} must be an object with a string \`description\`.`,
-      };
-    }
-
-    const { name, description } = tool;
-    if (typeof description !== "string") {
-      return {
-        ok: false,
-        status: 400,
-        code: "INVALID_TOOL",
-        message: `Tool at index ${i} must have a string \`description\` field.`,
-      };
-    }
-
-    if (description.length > MAX_DESCRIPTION_LENGTH) {
-      return {
-        ok: false,
-        status: 413,
-        code: "PAYLOAD_TOO_LARGE",
-        message: `Tool at index ${i} description exceeds ${MAX_DESCRIPTION_LENGTH} characters.`,
-      };
-    }
-
-    normalized.push({
-      name: typeof name === "string" ? name : undefined,
-      description,
-    });
-  }
-
-  return { ok: true, tools: normalized };
+  return {
+    ok: true,
+    mode: "manifest",
+    manifest: manifestObject,
+    includeSourceScan: Boolean(includeSourceScan),
+    sourceFiles: validatedSourceFiles,
+    baselineId: baselineId || undefined,
+  };
 }
 
-export function postScan(req, res) {
+/**
+ * Load fixture manifest from disk.
+ * @param {string} fixtureId
+ * @returns {Promise<object>}
+ */
+async function loadFixtureManifest(fixtureId) {
+  const manifestPath = join(FIXTURE_DIR, fixtureId, "tools.json");
+  const raw = await readFile(manifestPath, "utf8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`Fixture "${fixtureId}" is corrupted.`);
+  }
+}
+
+/**
+ * Generate a scanId that is unique but readable.
+ * @returns {string}
+ */
+function generateScanId() {
+  const uuid = randomUUID();
+  const timestamp = Date.now().toString(36);
+  const random = uuid.replace(/-/g, "").slice(0, 8);
+  return `scan_${timestamp}_${random}`;
+}
+
+/**
+ * Build the standardized success response shape.
+ * @param {object} inputs
+ * @param {object} analysisResults
+ * @returns {object}
+ */
+function buildScanResponse(inputs, analysisResults) {
+  const {
+    scanId,
+    mode,
+    fixtureId,
+    manifest,
+    includeSourceScan,
+    sourceFiles,
+    baselineId,
+  } = inputs;
+
+  const {
+    descriptionFindings,
+    sourceFindings,
+    fingerprintObj,
+    drift,
+    riskResult,
+    capabilityAnalysis,
+  } = analysisResults;
+
+  const toolsInspected =
+    mode === "fixture"
+      ? manifest.tools.length
+      : Array.isArray(manifest.tools)
+      ? manifest.tools.length
+      : 0;
+  const findings = [...(descriptionFindings ?? []), ...(sourceFindings ?? [])];
+  const severityCounts = Object.fromEntries(
+    ["critical", "high", "medium", "low"].map((severity) => [
+      severity,
+      findings.filter((finding) => finding.severity === severity).length,
+    ])
+  );
+  const recommendations = [
+    ...new Set(findings.map((finding) => finding.remediation).filter(Boolean)),
+  ];
+
+  return {
+    success: true,
+    scanId,
+    timestamp: new Date().toISOString(),
+    score: riskResult.score,
+    riskLevel: riskResult.riskLevel,
+    fingerprint: fingerprintObj.fingerprint,
+    baselineStatus: riskResult.baselineStatus,
+    // Legacy field for fixture-based scans
+    ...(mode === "fixture" && fixtureId ? { fixtureId } : {}),
+    // Backward compatibility fields
+    toolsScanned: toolsInspected,
+    fixtureId,
+    // New structured fields
+    summary: {
+      toolsInspected,
+      findingsCount: findings.length,
+      filesScanned: includeSourceScan ? (sourceFiles?.length ?? 0) : 0,
+    },
+    severityCounts,
+    scoreBreakdown: riskResult.scoreBreakdown,
+    findings,
+    capabilityAnalysis,
+    recommendations,
+    metadataChanges: drift
+      ? {
+          added: drift.added ?? [],
+          removed: drift.removed ?? [],
+          modified: drift.modified ?? [],
+        }
+      : undefined,
+    limitations: [
+      "Description analysis uses heuristic regexes; natural-language variation can cause false positives or false negatives.",
+      "Source scanning is pattern-based and bounded; it identifies risk indicators, not proof of exploitable vulnerabilities.",
+      "A changed description indicates drift, not necessarily malicious activity.",
+      "The risk score is a heuristic prioritization signal, not a formal security certification.",
+    ],
+  };
+}
+
+export async function postScan(req, res) {
+  // 1. Validate and normalize inputs.
   const validation = validateScanRequest(req.body);
   if (!validation.ok) {
     return res.status(validation.status).json({
@@ -164,17 +324,93 @@ export function postScan(req, res) {
     });
   }
 
-  const { tools } = validation;
-  const findings = scanDescriptions(tools);
-  const score = computeScore(findings);
+  try {
+    // 2. Load manifest (from fixture or manifest).
+    let manifest;
+    let fixtureId = undefined;
+    if (validation.mode === "fixture") {
+      manifest = await loadFixtureManifest(validation.fixtureId);
+      fixtureId = validation.fixtureId;
+    } else {
+      manifest = validation.manifest;
+    }
 
-  res.status(200).json({
-    success: true,
-    scanId: `scan_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    toolsScanned: tools.length,
-    score,
-    riskLevel: riskLevel(score),
-    fingerprint: fingerprint(tools),
-    findings,
-  });
+    // 3. Description analysis (always runs).
+    const descriptionFindings = analyzeDescriptions(manifest.tools);
+
+    // 4. Source scanning (only if flagged and sourceFiles provided).
+    let sourceFindings = [];
+    if (validation.includeSourceScan && validation.sourceFiles) {
+      const sourceResult = await scanSourceFiles(validation.sourceFiles);
+      sourceFindings = sourceResult.findings;
+    }
+
+    // 5. Canonical fingerprint.
+    const fingerprintObj = computeFingerprint(manifest);
+
+    // 6. Baseline comparison (if baselineId supplied).
+    let drift = null;
+    let hasBaseline = false;
+    if (validation.baselineId) {
+      hasBaseline = true;
+      const baselineRecord = await loadBaseline(validation.baselineId);
+      if (baselineRecord) {
+        drift = detectDrift(baselineRecord.manifest, manifest);
+      }
+      // If baseline not found, drift stays null and hasBaseline remains true
+      // so the risk scorer knows a baseline was requested but missing.
+    }
+
+    // 7. Risk scoring.
+    const riskResult = calculateRiskScore({
+      descriptionFindings,
+      sourceFindings,
+      drift,
+      hasBaseline,
+    });
+
+    // 8. Generate scanId and build response.
+    const scanId = generateScanId();
+    const analysisResults = {
+      descriptionFindings,
+      sourceFindings,
+      fingerprintObj,
+      drift,
+      riskResult,
+      capabilityAnalysis: analyzeCapabilities(manifest.tools, sourceFindings),
+    };
+    const response = buildScanResponse(
+      {
+        scanId,
+        mode: validation.mode,
+        fixtureId,
+        manifest,
+        includeSourceScan: validation.includeSourceScan,
+        sourceFiles: validation.sourceFiles,
+        baselineId: validation.baselineId,
+      },
+      analysisResults
+    );
+
+    // 9. Persist a sanitized report for later retrieval.
+    const reportToSave = {
+      ...response,
+      scanId,
+      fixtureId: validation.mode === "fixture" ? validation.fixtureId : undefined,
+      includeSourceScan: validation.includeSourceScan,
+      createdAt: new Date().toISOString(),
+      // Strip fields that are too large or internal for reports storage.
+      limitations: undefined,
+    };
+    await saveReport(reportToSave);
+
+    // 10. Return the response.
+    res.status(200).json(response);
+  } catch (err) {
+    console.error("[scan.controller] unexpected error:", err);
+    return res.status(500).json({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: err.message },
+    });
+  }
 }

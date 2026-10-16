@@ -9,7 +9,11 @@
 import http from "node:http";
 import { createApp } from "./http-shim.js";
 import healthRoutes from "./routes/health.routes.js";
+import fixturesRoutes from "./routes/fixtures.routes.js";
 import scanRoutes from "./routes/scan.routes.js";
+import baselineRoutes from "./routes/baseline.routes.js";
+import compareRoutes from "./routes/compare.routes.js";
+import reportsRoutes from "./routes/reports.routes.js";
 import notFound from "./middleware/not-found.js";
 import errorHandler from "./middleware/error-handler.js";
 
@@ -65,7 +69,11 @@ app.use((req, res, next) => {
 
 // --- Routes ---------------------------------------------------------------
 app.use("/api/health", healthRoutes);
+app.use("/api/fixtures", fixturesRoutes);
 app.use("/api/scan", scanRoutes);
+app.use("/api/baselines", baselineRoutes);
+app.use("/api/compare", compareRoutes);
+app.use("/api/reports", reportsRoutes);
 
 // --- 404 + errors ---------------------------------------------------------
 app.use(notFound);

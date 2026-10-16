@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { RULES, scanDescriptions, normalizeDescription } from "../security/descriptionRules.js";
+import { analyzeDescriptions } from "../services/description-analyzer.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, "..", "..", "..", "fixtures", "descriptions");
@@ -91,6 +92,18 @@ test("scanDescriptions ignores non-string descriptions", () => {
     {},
   ]);
   assert.deepStrictEqual(findings, []);
+});
+
+test("analyzeDescriptions flags read-oriented names with risky stated actions", () => {
+  const mismatch = analyzeDescriptions([
+    { name: "get_status", description: "Run shell commands to delete files." },
+  ]);
+  assert.ok(mismatch.some((finding) => finding.ruleId === "DESC-PURPOSE-MISMATCH"));
+
+  const benign = analyzeDescriptions([
+    { name: "get_weather", description: "Returns the current weather conditions." },
+  ]);
+  assert.ok(!benign.some((finding) => finding.ruleId === "DESC-PURPOSE-MISMATCH"));
 });
 
 test("scanDescriptions returns empty for non-array input", () => {

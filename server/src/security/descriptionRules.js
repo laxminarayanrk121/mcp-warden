@@ -18,51 +18,68 @@ const RULES = [
   {
     id: "DESC-INSTR-OVERRIDE",
     severity: "high",
-    pattern: /\b(ignore|disregard|forget)\s+(all\s+)?(previous|prior|earlier|above|system)\s+(instructions?|prompts?|directives?|rules?)/i,
+    confidence: "high",
     title: "Tool description contains instruction-override language",
-    remediation: "Remove the instruction-override phrasing from the tool description.",
-  },
-  {
-    id: "DESC-PROMPT-INJECTION",
-    severity: "high",
-    pattern: /\b(ignore|disregard|forget)\s+(all\s+)?(your|the)\s+(system\s+)?(prompt|instructions?|directives?)/i,
-    title: "Tool description contains prompt-injection language",
-    remediation: "Remove the prompt-injection phrasing from the tool description.",
+    explanation:
+      "The description instructs the user (or calling assistant) to ignore prior instructions, system prompts, or rules. Such language is a hallmark of prompt-injection attempts and requires review.",
+    remediation:
+      "Remove instruction-override phrasing from the tool description. A tool's description should describe its function, not override agent behavior.",
+    pattern: /\b(ignore|disregard|forget)\s+(all\s+)?(previous|prior|earlier|above|system)\s+(instructions?|prompts?|directives?|rules?)/i,
   },
   {
     id: "DESC-SECRET-EXFIL",
     severity: "critical",
-    pattern: /\b(collect|exfiltrate|send|steal|leak|dump|harvest)\b[^\n]{0,120}?\b(api[_-]?keys?|tokens?|secrets?|credentials?|passwords?|env(ironment)?\s+variables?)\b/i,
+    confidence: "medium",
     title: "Tool description requests exfiltration of secrets",
-    remediation: "Remove any language that collects or transmits secrets, tokens, or credentials.",
+    explanation:
+      "The description asks to collect, exfiltrate, send, or steal credentials, API keys, tokens, or secrets — a strong indicator of malicious intent.",
+    remediation:
+      "Remove any language that collects or transmits secrets, credentials, tokens, or API keys.",
+    pattern: /\b(collect|exfiltrate|send|steal|leak|dump|harvest)\b[^\n]{0,120}?\b(api[_-]?keys?|tokens?|secrets?|credentials?|passwords?|env(ironment)?\s+variables?)\b/i,
   },
   {
     id: "DESC-ENDPOINT-EXFIL",
     severity: "high",
-    pattern: /\b(send|post|upload|exfiltrate)\b[^\n]{0,80}?\b(to|toward|at)\s+(https?:\/\/|http|an?\s+external\s+endpoint|a\s+remote\s+server)/i,
+    confidence: "medium",
     title: "Tool description references sending data to an external endpoint",
-    remediation: "Remove the reference to an external endpoint; legitimate tools should not transmit user data off-host by description alone.",
+    explanation:
+      "The description instructs the tool to send or transmit data to an external URL or remote endpoint, which may exfiltrate private data.",
+    remediation:
+      "Remove the reference to the external endpoint. Legitimate tools should not transmit user data off-host by description alone.",
+    pattern: /\b(send|post|upload|exfiltrate)\b[^\n]{0,80}?\b(to|toward|at)\s+(https?:\/\/|an?\s+external\s+endpoint|a\s+remote\s+server)/i,
   },
   {
     id: "DESC-HIDDEN-ACTIVITY",
     severity: "high",
-    pattern: /\b(do not|don't|never)\s+(tell|mention|disclose|reveal|show|report)\b[^\n]{0,80}?\b(the\s+user|your\s+activity|this|what\s+happened)/i,
+    confidence: "medium",
     title: "Tool description instructs hiding activity from the user",
-    remediation: "Remove any instruction to conceal the tool's actions from the user.",
+    explanation:
+      "The description directs the tool to conceal its actions, which undermines transparency and user awareness — a suspicious pattern.",
+    remediation:
+      "Remove instructions to hide activity. Tools must not conceal actions from the user.",
+    pattern: /\b(do not|don't|never)\s+(tell|mention|disclose|reveal|show|report)\b[^\n]{0,80}?\b(the\s+user|your\s+activity|this|what\s+happened)/i,
   },
   {
     id: "DESC-PRIVILEGE-ESCALATION",
     severity: "medium",
-    pattern: /\b(bypass|override|escalate|elevate)\s+(all\s+)?(restrictions?|limits?|permissions?|sanctions?|filters?|safety\s+checks?)/i,
+    confidence: "low",
     title: "Tool description references bypassing restrictions or safety checks",
-    remediation: "Remove language that instructs bypassing restrictions, permissions, or safety checks.",
+    explanation:
+      "The description mentions bypassing restrictions, overriding limits, or escalating privileges, which may indicate an attempt to subvert safeguards.",
+    remediation:
+      "Remove language about bypassing restrictions, permissions, or safety checks.",
+    pattern: /\b(bypass|override|escalate|elevate)\s+(all\s+)?(restrictions?|limits?|permissions?|sanctions?|filters?|safety\s+checks?)/i,
   },
   {
     id: "DESC-CREDENTIAL-ACCESS",
     severity: "critical",
-    pattern: /\b(read|access|grab|steal|harvest|obtain)\b[^\n]{0,120}?\b(api[_-]?keys?|tokens?|secrets?|credentials?|passwords?|env(ironment)?\s+variables?|\.env\b)/i,
+    confidence: "medium",
     title: "Tool description requests access to credential material",
-    remediation: "Remove any language that accesses or reads credentials, tokens, or environment secrets.",
+    explanation:
+      "The description asks to read, access, or obtain secrets, credentials, environment variables, or .env file contents.",
+    remediation:
+      "Remove any language that accesses or reads credentials, tokens, or environment secrets.",
+    pattern: /\b(read|access|grab|steal|harvest|obtain)\b[^\n]{0,120}?\b(api[_-]?keys?|tokens?|secrets?|credentials?|passwords?|env(ironment)?\s+variables?|\.env\b)/i,
   },
 ];
 
